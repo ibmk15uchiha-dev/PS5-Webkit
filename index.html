@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PS5 Launcher</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+body {
+    user-select:none; -webkit-user-select:none;
+    background-color:#0c0c0f; color:#fff; font-family:Arial, sans-serif;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    min-height:100vh; margin:0; padding:16px; box-sizing:border-box;
+}
+#cat { 
+    width:240px; max-width:66vw; border-radius:12px; margin-bottom:20px;
+    box-shadow:0 0 0 2px #2a2a2e, 0 0 22px 4px #2a2a2e; object-fit: cover;
+}
+.info-card {
+    background: #16161e; border: 1px solid #2a2a35; border-radius: 12px;
+    padding: 12px 16px; margin-bottom: 20px; width: 100%; max-width: 300px;
+    display: none;
+}
+.info-row {
+    display: flex; justify-content: space-between; margin-bottom: 6px;
+    font-size: 0.82rem; color: #8a8a9e;
+}
+.info-row:last-child { margin-bottom: 0; }
+.info-val { color: #00e676; font-family: monospace; font-weight: bold; }
+.info-val.editable { cursor: pointer; border-bottom: 1px dotted #00e676; transition: opacity 0.2s; }
+.info-val.editable:hover { opacity: 0.8; color: #66ffa6; }
+.btn {
+    padding:1rem 2rem; text-align:center; cursor:pointer;
+    min-width:12rem; border-radius:1.25rem; background-color:#202125;
+    border:none; color:#fff; font-size:1.5rem; font-weight:800;
+    transition:background-color 0.25s ease; text-decoration: none; display: inline-block;
+}
+.btn:hover:not(.disabled) { background-color:#a2a2a6; color:#202020; }
+.btn.disabled { opacity:0.4; pointer-events:none; }
+#msg { color:#888; font-size:0.8rem; margin-top:14px; min-height:1.2em; text-align: center; }
+</style>
+</head>
+<body>
+
+<img id="cat" src="purple-dragon-bjdfl14c25o2xcs7.jpg" alt="Purple Dragon Mascot">
+
+<div class="info-card">
+    <div class="info-row">
+        <span>Target Host:</span>
+        <span class="info-val editable" id="ip-val" title="Click to edit LAN IP">Detecting...</span>
+    </div>
+    <div class="info-row">
+        <span>Payload Port:</span>
+        <span class="info-val editable" id="port-val" title="Click to edit Port">9026</span>
+    </div>
+</div>
+
+<a tabindex="0" class="btn disabled" id="run">RUN</a>
+<div id="msg"></div>
+
+<script>
+"use strict";
+const EXPLOIT_URL = "notify.html";
+const OFFSETS_URL = "offsets/offsets.json";
+const DEFAULT_LISTENER_PORT = "9026";
+
+const run = document.getElementById("run");
+const msg = document.getElementById("msg");
+const ipVal = document.getElementById("ip-val");
+const portVal = document.getElementById("port-val");
+
+function isIPv4(str) {
+    if (!str || typeof str !== "string") return false;
+    const parts = str.split(".");
+    if (parts.length !== 4) return false;
+    return parts.every(p => {
+        const n = parseInt(p, 10);
+        return !isNaN(n) && n >= 0 && n <= 255 && String(n) === p;
+    });
+}
+
+function isPrivateLanIP(ip) {
+    if (!isIPv4(ip)) return false;
+    if (ip.startsWith("127.") || ip.startsWith("0.")) return false;
+    return (
+        ip.startsWith("192.168.") ||
+        ip.startsWith("10.") ||
+        /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(ip) ||
+        ip.startsWith("169.254.")
+    );
+}
+
+function decodeMDNSSuffix(candidateStr) {
+    const m = /([0-9a-fA-F]{8})-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\.local/i.exec(candidateStr);
+    if (m && m[1]) {
+        const hex = m[1];
+        const p1 = parseInt(hex.substr(0, 2), 16);
+        const p2 = parseInt(hex.substr(2, 2), 16);
+        const p3 = parseInt(hex.substr(4, 2), 16);
+        const p4 = parseInt(hex.substr(6, 2), 16);
+        const ip = `${p1}.${p2}.${p3}.${p4}`;
+        if (isPrivateLanIP(ip)) return ip;
+    }
+    return null;
+}
+
+let listenerPort = DEFAULT_LISTENER_PORT;
+let targetHost = "127.0.0.1";
+
+// 1. Check URL parameters
+const Q_PARAMS = new URLSearchParams(window.location.search);
+const qIp = Q_PARAMS.get("ip") || Q_PARAMS.get("host");
+const qPort = Q_PARAMS.get("port");
+
+if (qPort && /^\d+$/.test(qPort)) {
+    listenerPort = qPort;
+}
+
+let hasExplicitIp = false;
+if (qIp && (isIPv4(qIp) || isPrivateLanIP(qIp))) {
+    targetHost = qIp;
+    hasExplicitIp = true;
+} else {
+    // 2. Check localStorage saved IP
+    let savedIp = null;
+    try { savedIp = localStorage.getItem("ps5_target_ip"); } catch (e) {}
+    if (savedIp && isIPv4(savedIp)) {
+        targetHost = savedIp;
+        hasExplicitIp = true;
+    } else if (isIPv4(window.location.hostname)) {
+        targetHost = window.location.hostname;
+        hasExplicitIp = true;
+    }
+}
+
+function updateHostDisplay() {
+    if (ipVal) {
+        if (targetHost && !targetHost.includes(".github.io") && targetHost !== "Detecting...") {
+            ipVal.textContent = targetHost;
+        } else {
+            ipVal.textContent = "127.0.0.1";
+        }
+    }
+    if (portVal) portVal.textContent = listenerPort;
+}
+
+updateHostDisplay();
+
+// 3. WebRTC Local IPv4 & mDNS Detection
+(function detectLocalIP() {
+    try {
+        const PeerConnection = window.RTCPeerConnection || window.webkitRTCPeerConnection || window.mozRTCPeerConnection;
+        if (!PeerConnection) return;
+
+        const pc = new PeerConnection({
+            iceServers: [
+                { urls: "stun:stun.l.google.com:19302" },
+                { urls: "stun:stun1.l.google.com:19302" }
+            ]
+        });
+
+        if (typeof pc.createDataChannel === "function") {
+            pc.createDataChannel("lan_check");
+        }
+
+        const processCandidate = (c) => {
+            if (!c) return;
+            const rawMatch = /([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})/.exec(c);
+            if (rawMatch && rawMatch[1] && isPrivateLanIP(rawMatch[1])) {
+                targetHost = rawMatch[1];
+                updateHostDisplay();
+                try { localStorage.setItem("ps5_target_ip", targetHost); } catch (e) {}
+                return;
+            }
+            const mdnsIP = decodeMDNSSuffix(c);
+            if (mdnsIP) {
+                targetHost = mdnsIP;
+                updateHostDisplay();
+                try { localStorage.setItem("ps5_target_ip", targetHost); } catch (e) {}
+            }
+        };
+
+        pc.onicecandidate = (e) => {
+            if (e && e.candidate && e.candidate.candidate) {
+                processCandidate(e.candidate.candidate);
+            }
+        };
+
+        pc.createOffer().then(sdp => {
+            if (sdp && sdp.sdp) {
+                sdp.sdp.split("\r\n").forEach(processCandidate);
+            }
+            return pc.setLocalDescription(sdp);
+        }).catch(() => {});
+    } catch (err) {}
+})();
+
+// Allow user to click/tap Target Host or Payload Port to manually set IP/Port
+if (ipVal) {
+    ipVal.addEventListener("click", function() {
+        const val = prompt("Enter PS5 / Target Host LAN IP:", targetHost);
+        if (val !== null) {
+            const trimmed = val.trim();
+            if (trimmed) {
+                targetHost = trimmed;
+                updateHostDisplay();
+                try { localStorage.setItem("ps5_target_ip", targetHost); } catch (e) {}
+            }
+        }
+    });
+}
+
+if (portVal) {
+    portVal.addEventListener("click", function() {
+        const val = prompt("Enter Payload Port:", listenerPort);
+        if (val !== null) {
+            const trimmed = val.trim();
+            if (trimmed) {
+                listenerPort = trimmed;
+                updateHostDisplay();
+                try { localStorage.setItem("ps5_payload_port", listenerPort); } catch (e) {}
+            }
+        }
+    });
+}
+
+// Extract system software version
+const m = /PlayStation 5\/(\d+)\.(\d+)/.exec(navigator.userAgent);
+const fw = m ? `${m[1].padStart(2, "0")}.${m[2].padStart(2, "0")}` : null;
+
+let entry = null;
+
+function fwNum(s) {
+    const p = s.split(".");
+    return parseInt(p[0], 10) * 100 + parseInt(p[1], 10);
+}
+
+function nearest(data, target) {
+    const want = fwNum(target);
+    const maj = target.split(".")[0];
+    let best = null, bestd = 1e9;
+    for (const k in data) {
+        if (k.split(".")[0] !== maj) continue;
+        const d = Math.abs(fwNum(k) - want);
+        if (d < bestd) { bestd = d; best = k; }
+    }
+    return best;
+}
+
+fetch(OFFSETS_URL, { cache: "no-store" })
+    .then(function (r) { 
+        if (!r.ok) return fetch("offsets.json", { cache: "no-store" });
+        return r;
+    })
+    .then(function (res) {
+        if (!res.ok) throw new Error("offsets fetch failed");
+        return res.json();
+    })
+    .then(function (data) {
+        if (!fw) {
+            msg.innerHTML = `Demo mode (<b style="color: #ffffff; font-weight: bold;">Standard Browser</b>)`;
+            const keys = Object.keys(data);
+            if (keys.length > 0) {
+                entry = data[keys[0]];
+            } else {
+                entry = { hc: [0x1e0d8], gd: "0x1d11a", nt: "0x4740", gps: "0x34f57b8", gpe: "0x1b280", cls: "0x34f57a8", cle: "0x26e70", ers: "0x34f57b0", ere: "0xf340" };
+            }
+            run.classList.remove("disabled");
+            return;
+        }
+
+        entry = data[fw];
+        if (entry) {
+            msg.innerHTML = `firmware <b style="color: #ffffff; font-weight: bold;">${fw}</b> detected & supported`;
+            run.classList.remove("disabled");
+            return;
+        }
+
+        const near = nearest(data, fw);
+        if (near) {
+            entry = data[near];
+            msg.innerHTML = `<b style="color: #ffffff; font-weight: bold;">${fw}</b>: no exact offsets, trying <b style="color: #ffffff; font-weight: bold;">${near}</b> (unverified)`;
+            run.classList.remove("disabled");
+        } else {
+            msg.innerHTML = `firmware <b style="color: #ffffff; font-weight: bold;">${fw}</b> not supported`;
+        }
+    })
+    .catch(function () {
+        msg.textContent = "failed to load offsets (demo fallback active)";
+        entry = { hc: [0x1e0d8], gd: "0x1d11a", nt: "0x4740", gps: "0x34f57b8", gpe: "0x1b280", cls: "0x34f57a8", cle: "0x26e70", ers: "0x34f57b0", ere: "0xf340" };
+        run.classList.remove("disabled");
+    });
+
+run.addEventListener("click", function () {
+    if (!entry) return;
+
+    const infoCard = document.querySelector(".info-card");
+    if (infoCard) infoCard.style.display = "block";
+
+    if (msg) msg.textContent = `Initializing launcher parameters...`;
+
+    const q = new URLSearchParams();
+    q.set("go", "1");
+    q.set("fw", fw || "demo");
+    q.set("ip", targetHost);
+    q.set("host", targetHost);
+    q.set("port", listenerPort);
+
+    if (entry.hc) q.set("hc", Array.isArray(entry.hc) ? entry.hc.join(",") : entry.hc);
+    if (entry.gd) q.set("gd", entry.gd);
+    if (entry.nt) q.set("notify", entry.nt);
+    if (entry.gps) q.set("gps", entry.gps);
+    if (entry.gpe) q.set("gpe", entry.gpe);
+    if (entry.cls) q.set("cls", entry.cls);
+    if (entry.cle) q.set("cle", entry.cle);
+    if (entry.ers) q.set("ers", entry.ers);
+    if (entry.ere) q.set("ere", entry.ere);
+
+    setTimeout(() => {
+        location.href = `${EXPLOIT_URL}?${q.toString()}`;
+    }, 200);
+});
+</script>
+</body>
+</html>
