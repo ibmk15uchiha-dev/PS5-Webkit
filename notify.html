@@ -42,9 +42,15 @@ body {
 <div id="cap">PoC PS5 FW &mdash;</div>
 <img id="cat" class="run" src="cat.jpg" alt="">
 <div id="status"></div>
-<div id="target-info" style="display:none; background:#16161e; border:1px solid #2a2a35; border-radius:10px; padding:10px 16px; margin:10px 0; font-family:monospace; font-size:14px; text-align:center;">
-    <div style="color:#8a8a9e; margin-bottom:4px;">TARGET CONNECTION READY</div>
-    <div style="color:#00e676; font-size:16px; font-weight:bold;"><span id="info-ip">127.0.0.1</span> : <span id="info-port">9026</span></div>
+<div id="target-info" style="display:none; background:#16161e; border:1px solid #2a2a35; border-radius:12px; padding:12px 18px; margin:12px 0; font-family:monospace; font-size:14px; text-align:center; box-shadow: 0 4px 20px rgba(0,0,0,0.5);">
+    <div style="display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap;">
+        <span id="payload-status-dot" style="width:10px; height:10px; border-radius:50%; background:#ffab00; display:inline-block; box-shadow: 0 0 8px #ffab00;"></span>
+        <span id="payload-status-text" style="color:#8a8a9e; font-size: 13px; font-weight: bold; letter-spacing: 0.5px;">LISTENING FOR PAYLOAD CONNECTION</span>
+        <span id="payload-tag" style="background:#20212f; border: 1px solid #3a3a4d; color:#00e5ff; font-size: 11px; padding: 2px 8px; border-radius: 6px; font-weight: bold;">ELF Loader</span>
+    </div>
+    <div style="color:#00e676; font-size:18px; font-weight:bold; letter-spacing: 1px;">
+        <span id="info-ip">127.0.0.1</span> : <span id="info-port">9026</span>
+    </div>
 </div>
 <script>
 "use strict";
@@ -56,10 +62,42 @@ const TARGET_PORT_PARAM = Q.get("port") || "9026";
 const infoIpEl = document.getElementById("info-ip");
 const infoPortEl = document.getElementById("info-port");
 const targetInfoEl = document.getElementById("target-info");
+const payloadStatusDot = document.getElementById("payload-status-dot");
+const payloadStatusText = document.getElementById("payload-status-text");
+const payloadTag = document.getElementById("payload-tag");
+
+function getPayloadName(port) {
+    switch (String(port)) {
+        case "9026": return "ELF Loader";
+        case "9020": return "etaHEN / Kstuff";
+        case "9021": return "PS5Debug";
+        case "9028": return "WebSDR Server";
+        default: return `Port ${port}`;
+    }
+}
 
 if (infoIpEl) infoIpEl.textContent = TARGET_IP_PARAM;
 if (infoPortEl) infoPortEl.textContent = TARGET_PORT_PARAM;
+if (payloadTag) payloadTag.textContent = getPayloadName(TARGET_PORT_PARAM);
 if (targetInfoEl) targetInfoEl.style.display = "block";
+
+function updatePayloadStatus(status, type) {
+    if (!payloadStatusText || !payloadStatusDot) return;
+    payloadStatusText.textContent = status;
+    if (type === "success") {
+        payloadStatusDot.style.background = "#00e676";
+        payloadStatusDot.style.boxShadow = "0 0 10px #00e676";
+        payloadStatusText.style.color = "#00e676";
+    } else if (type === "error") {
+        payloadStatusDot.style.background = "#ff1744";
+        payloadStatusDot.style.boxShadow = "0 0 10px #ff1744";
+        payloadStatusText.style.color = "#ff1744";
+    } else {
+        payloadStatusDot.style.background = "#ffab00";
+        payloadStatusDot.style.boxShadow = "0 0 10px #ffab00";
+        payloadStatusText.style.color = "#8a8a9e";
+    }
+}
 
 function intParam(name, fallback, lo, hi) {
     const raw = parseInt(Q.get(name) ?? "", 10);
@@ -394,6 +432,11 @@ function showStatus(text, cls) {
         const node = document.getElementById("status");
         node.textContent = text;
         node.className = cls;
+        if (cls === "ok") {
+            updatePayloadStatus("PAYLOAD LISTENER ACTIVE & READY", "success");
+        } else if (cls === "bad") {
+            updatePayloadStatus("EXPLOIT / CONNECTION ERROR", "error");
+        }
     } catch {}
 }
 

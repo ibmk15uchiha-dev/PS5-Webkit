@@ -28,6 +28,17 @@ body {
 .info-val { color: #00e676; font-family: monospace; font-weight: bold; }
 .info-val.editable { cursor: pointer; border-bottom: 1px dotted #00e676; transition: opacity 0.2s; }
 .info-val.editable:hover { opacity: 0.8; color: #66ffa6; }
+.preset-row {
+    display: flex; gap: 4px; margin-top: 8px; justify-content: space-between;
+}
+.preset-pill {
+    background: #20212f; border: 1px solid #3a3a4d; color: #00e5ff;
+    font-size: 0.68rem; padding: 4px 6px; border-radius: 6px; cursor: pointer;
+    font-weight: bold; transition: all 0.2s ease;
+}
+.preset-pill:hover, .preset-pill.active {
+    background: #00e5ff; color: #121216; border-color: #00e5ff;
+}
 .btn {
     padding:1rem 2rem; text-align:center; cursor:pointer;
     min-width:12rem; border-radius:1.25rem; background-color:#202125;
@@ -51,6 +62,12 @@ body {
     <div class="info-row">
         <span>Payload Port:</span>
         <span class="info-val editable" id="port-val" title="Click to edit Port">9026</span>
+    </div>
+    <div class="preset-row">
+        <button type="button" class="preset-pill active" data-port="9026">9026 ELF</button>
+        <button type="button" class="preset-pill" data-port="9020">9020 etaHEN</button>
+        <button type="button" class="preset-pill" data-port="9021">9021 Debug</button>
+        <button type="button" class="preset-pill" data-port="9028">9028 WebSDR</button>
     </div>
 </div>
 
@@ -222,6 +239,16 @@ if (portVal) {
         }
     });
 }
+
+document.querySelectorAll(".preset-pill").forEach(function(btn) {
+    btn.addEventListener("click", function() {
+        document.querySelectorAll(".preset-pill").forEach(p => p.classList.remove("active"));
+        this.classList.add("active");
+        listenerPort = this.getAttribute("data-port");
+        updateHostDisplay();
+        try { localStorage.setItem("ps5_payload_port", listenerPort); } catch (e) {}
+    });
+});
 
 // Extract system software version
 const m = /PlayStation 5\/(\d+)\.(\d+)/.exec(navigator.userAgent);
