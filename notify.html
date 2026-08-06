@@ -19,11 +19,22 @@ body {
 }
 #cat { border: 4px solid transparent; }
 #cat.run { animation: pulse 1.1s ease-in-out infinite; }
-#cat.ok  { border-color: #16c60c; box-shadow: 0 0 0 2px #16c60c, 0 0 40px 10px rgba(22,198,12,0.75); animation: none; }
+#cat.ok {
+    border-color: #16c60c;
+    box-shadow: 0 0 0 2px #16c60c, 0 0 40px 10px rgba(22,198,12,0.75);
+    animation: escapeSandbox 1.5s ease-out forwards;
+}
 #cat.bad { border-color: #e74856; box-shadow: 0 0 0 2px #e74856, 0 0 34px 8px rgba(231,72,86,0.6); animation: none; }
 @keyframes pulse {
     0%,100% { box-shadow: 0 0 0 2px #35507a, 0 0 16px 3px rgba(53,80,122,0.5); }
     50%     { box-shadow: 0 0 0 2px #4f7fd6, 0 0 30px 8px rgba(79,127,214,0.7); }
+}
+@keyframes escapeSandbox {
+    0% { transform: scale(1) translateY(0) rotate(0deg); }
+    20% { transform: scale(1.1) translateY(-10px) rotate(-2deg); }
+    40% { transform: scale(1.05) translateY(-5px) rotate(2deg); }
+    60% { transform: scale(1.2) translateY(-20px) rotate(-5deg); box-shadow: 0 20px 40px rgba(0,0,0,0.8), 0 0 40px 10px rgba(22,198,12,0.75); }
+    100% { transform: scale(1.3) translateY(-30px) rotate(3deg); box-shadow: 0 30px 60px rgba(0,0,0,0.9), 0 0 50px 15px rgba(22,198,12,0.9); z-index: 100; position: relative; }
 }
 #status {
     font-size: 17px; font-weight: bold; letter-spacing: 1px;
@@ -40,7 +51,7 @@ body {
 </style>
 <body>
 <div id="cap">PoC PS5 FW &mdash;</div>
-<img id="cat" class="run" src="cat.jpg" alt="">
+<img id="cat" class="run" src="purple-dragon-bjdfl14c25o2xcs7.jpg" alt="Purple Dragon Mascot">
 <div id="status"></div>
 <div id="target-info" style="display:none; background:#16161e; border:1px solid #2a2a35; border-radius:12px; padding:12px 18px; margin:12px 0; font-family:monospace; font-size:14px; text-align:center; box-shadow: 0 4px 20px rgba(0,0,0,0.5);">
     <div style="display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap;">
@@ -52,6 +63,16 @@ body {
         <span id="info-ip">127.0.0.1</span> : <span id="info-port">9026</span>
     </div>
 </div>
+<div id="payload-manager" style="display:none; background:#1e1e24; border:1px solid #3a3a4d; border-radius:12px; padding:12px; margin-top:12px; text-align:center; width: 280px; box-shadow: 0 4px 15px rgba(0,0,0,0.5);">
+    <div style="color:#00e5ff; font-weight:bold; margin-bottom:10px; font-size:14px; text-transform:uppercase;">Built-in Payloads</div>
+    <div style="display:flex; flex-direction:column; gap:8px;">
+        <button type="button" class="payload-btn" data-file="hello_world.elf" style="background:#2a2a35; color:#fff; border:1px solid #4f7fd6; border-radius:8px; padding:8px; cursor:pointer; font-weight:bold; transition: background 0.2s;">Hello World</button>
+        <button type="button" class="payload-btn" data-file="ftp.bin" style="background:#2a2a35; color:#fff; border:1px solid #4f7fd6; border-radius:8px; padding:8px; cursor:pointer; font-weight:bold; transition: background 0.2s;">FTP Server</button>
+    </div>
+</div>
+<style>
+.payload-btn:hover { background: #4f7fd6 !important; }
+</style>
 <script>
 "use strict";
 
@@ -79,7 +100,7 @@ function getPayloadName(port) {
 if (infoIpEl) infoIpEl.textContent = TARGET_IP_PARAM;
 if (infoPortEl) infoPortEl.textContent = TARGET_PORT_PARAM;
 if (payloadTag) payloadTag.textContent = getPayloadName(TARGET_PORT_PARAM);
-if (targetInfoEl) targetInfoEl.style.display = "block";
+// Target Info and Payload Manager will only be shown via showStatus on OK.
 
 function updatePayloadStatus(status, type) {
     if (!payloadStatusText || !payloadStatusDot) return;
@@ -98,6 +119,32 @@ function updatePayloadStatus(status, type) {
         payloadStatusText.style.color = "#8a8a9e";
     }
 }
+
+document.querySelectorAll('.payload-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+        const file = this.getAttribute('data-file');
+        updatePayloadStatus(`FETCHING ${file}...`, 'run');
+        fetch(`payloads/${file}`)
+            .then(res => {
+                if (!res.ok) throw new Error("File not found");
+                return res.arrayBuffer();
+            })
+            .then(data => {
+                updatePayloadStatus(`SENDING PAYLOAD...`, 'run');
+                return fetch(`http://${TARGET_IP_PARAM}:${TARGET_PORT_PARAM}`, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    body: data
+                });
+            })
+            .then(() => {
+                updatePayloadStatus("PAYLOAD SENT!", "success");
+            })
+            .catch(err => {
+                updatePayloadStatus("FAILED: " + err.message, "error");
+            });
+    });
+});
 
 function intParam(name, fallback, lo, hi) {
     const raw = parseInt(Q.get(name) ?? "", 10);
@@ -458,9 +505,39 @@ function failed() {
 function succeeded(detail) {
     stopped = true;
     catState("ok");
-    setCaption(`PoC PS5 FW ${FW_LABEL} - NOTIFICATION SENT`);
+    setCaption(`PoC PS5 FW ${FW_LABEL} - READY`);
     showStatus(`SUCCESS (attempt ${attemptNumber})`, "ok");
     
+    // Show payload manager and target info
+    const pm = document.getElementById('payload-manager');
+    const ti = document.getElementById('target-info');
+    if (pm) pm.style.display = 'block';
+    if (ti) ti.style.display = 'block';
+    
+    // Automatically run test.lua
+    setTimeout(() => {
+        updatePayloadStatus(`FETCHING test.lua...`, 'run');
+        fetch(`payloads/test.lua`)
+            .then(res => {
+                if (!res.ok) throw new Error("File not found");
+                return res.arrayBuffer();
+            })
+            .then(data => {
+                updatePayloadStatus(`SENDING test.lua...`, 'run');
+                return fetch(`http://${TARGET_IP_PARAM}:${TARGET_PORT_PARAM}`, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    body: data
+                });
+            })
+            .then(() => {
+                updatePayloadStatus("test.lua SENT!", "success");
+            })
+            .catch(err => {
+                updatePayloadStatus("FAILED: " + err.message, "error");
+            });
+    }, 1000); // slight delay to allow the PS5 loader port to fully open
+
     try {
         const infoBox = document.getElementById("target-info");
         const infoIp = document.getElementById("info-ip");

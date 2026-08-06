@@ -63,12 +63,6 @@ body {
         <span>Payload Port:</span>
         <span class="info-val editable" id="port-val" title="Click to edit Port">9026</span>
     </div>
-    <div class="preset-row">
-        <button type="button" class="preset-pill active" data-port="9026">9026 ELF</button>
-        <button type="button" class="preset-pill" data-port="9020">9020 etaHEN</button>
-        <button type="button" class="preset-pill" data-port="9021">9021 Debug</button>
-        <button type="button" class="preset-pill" data-port="9028">9028 WebSDR</button>
-    </div>
 </div>
 
 <a tabindex="0" class="btn disabled" id="run">RUN</a>
@@ -239,16 +233,6 @@ if (portVal) {
         }
     });
 }
-
-document.querySelectorAll(".preset-pill").forEach(function(btn) {
-    btn.addEventListener("click", function() {
-        document.querySelectorAll(".preset-pill").forEach(p => p.classList.remove("active"));
-        this.classList.add("active");
-        listenerPort = this.getAttribute("data-port");
-        updateHostDisplay();
-        try { localStorage.setItem("ps5_payload_port", listenerPort); } catch (e) {}
-    });
-});
 
 // Extract system software version
 const m = /PlayStation 5\/(\d+)\.(\d+)/.exec(navigator.userAgent);
