@@ -115,7 +115,7 @@ function decodeMDNSSuffix(candidateStr) {
 }
 
 let listenerPort = DEFAULT_LISTENER_PORT;
-let targetHost = "127.0.0.1";
+let targetHost = "192.168.X.X";
 
 // 1. Check URL parameters
 const Q_PARAMS = new URLSearchParams(window.location.search);
@@ -148,7 +148,7 @@ function updateHostDisplay() {
         if (targetHost && !targetHost.includes(".github.io") && targetHost !== "Detecting...") {
             ipVal.textContent = targetHost;
         } else {
-            ipVal.textContent = "127.0.0.1";
+            ipVal.textContent = "192.168.X.X";
         }
     }
     if (portVal) portVal.textContent = listenerPort;
